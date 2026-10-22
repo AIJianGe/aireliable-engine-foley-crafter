@@ -1,0 +1,325 @@
+# ============================================================
+# FoleyCrafter V2A 引擎 manifest（v0.2.5）
+# ------------------------------------------------------------
+# v0.2.6 决策：
+#   - paradigm: integrated（全自定义模式，继承 CustomEngine）
+#   - type: audio（新增音效独立分类）
+#   - 挂载 Gradio UI（非工作流编辑器）
+#   - 模型布局：audio/v2a/foleycrafter/v1/（含 4 个子模型 + Auffusion 基座 + IP-Adapter encoder）
+#   - 端口：7004（7001-7003 已被占用）
+#
+# 字段规范详见 PR/development-guide.md §30 manifest.yaml v0.2 规范
+# 校验逻辑见 core/src/core/manifest_schema.py
+#
+# 模型下载：
+#   FoleyCrafter 模型分散在 3 个 HF 仓库：
+#     1. ymzhang319/FoleyCrafter（temporal/semantic/timestamp 3 子模型，~1.1GB）
+#     2. auffusion/auffusion-full-no-adapter（Auffusion 基座，~8GB）
+#     3. h94/IP-Adapter（image_encoder，~1.5GB）
+#   需用 huggingface_hub.snapshot_download() 下载整个 repo
+#
+# foleycrafter Python 包安装（v0.2.12+）：
+#   FoleyCrafter 的 Python 代码位于 GitHub 仓库 open-mmlab/FoleyCrafter 的 foleycrafter/ 目录，
+#   但该仓库没有标准的 setup.py / pyproject.toml [project] 块，无法用 pip install 安装。
+#   引擎 load() 时自动通过 git clone 克隆仓库，复制 foleycrafter/ 到 .venv/Lib/site-packages/。
+#   也可通过 download_foleycrafter.py 脚本手动安装。
+#   国内用户可设置环境变量 FOLEYCRAFTER_GIT_MIRROR=https://ghproxy.com 加速 git clone。
+# ============================================================
+
+# ===== v0.1 必需字段 =====
+engine_id: foleycrafter_a3b2c1
+engine_name: FoleyCrafter
+engine_version: 0.1.0
+aireliable_compat: ">=0.0.16"
+uv_env_name: audio-foleycrafter
+export_mode: source
+
+# ===== v0.1 可选字段 =====
+description: "FoleyCrafter 视频转音效引擎（V2A，时间对齐 + 语义对齐，支持 T2A 文本转音效）"
+
+# ===== v0.2 新增字段 =====
+engine_uid: aireliable://open-mmlab/audio/foleycrafter
+paradigm: integrated
+sdk_version: ">=0.3.0"
+
+# 作者信息（v0.2.7：author 重新定义为"创建引擎的作者"，不再是第三方开源项目方）
+author:
+  name: AI剑歌
+
+# 第三方开源引用（v0.2.7 新增：记录引擎引用的第三方开源模型/代码）
+third_party_references:
+  - name: FoleyCrafter
+    author: open-mmlab
+    github: https://github.com/open-mmlab/FoleyCrafter
+    website: https://github.com/open-mmlab/FoleyCrafter
+    license: Apache-2.0
+    description: 引擎核心 V2A（视频转音效）能力来自 FoleyCrafter，含 temporal_adapter / semantic_adapter / timestamp_detector
+  - name: Auffusion
+    author: auffusion
+    github: https://github.com/auffusion/auffusion
+    license: Apache-2.0
+    description: 引擎 T2A（文本转音效）能力依赖 Auffusion 模型（auffusion-full-no-adapter diffusers 目录）
+
+# 来源信息
+source:
+  type: github
+  github_repo: open-mmlab/FoleyCrafter
+  branch: main
+
+# 升级信息
+upgrade:
+  check_url: https://api.github.com/repos/open-mmlab/FoleyCrafter/releases/latest
+  auto_check: false
+
+# 节点包依赖（integrated 范式不依赖节点包）
+node_packages: []
+
+# ============================================================
+# v0.2.5+ 引擎环境配置（env_config 块）
+# 供 EngineEnvManager 读取以决定是否检测 torch、默认 CUDA 版本等。
+# 字段规范详见 core/src/core/manifest_schema.py EnvConfigSchema
+#
+# FoleyCrafter 基于 diffusers + torch 执行 V2A 推理，依赖 torch>=2.1.0。
+# 依赖 moviepy + ffmpeg 处理视频帧提取与音视频合成。
+# ============================================================
+env_config:
+  requires_torch: true
+  torch_version_constraint: '>=2.1.0'
+  default_cuda_version: cu128
+  supported_cuda_versions:
+    - cu121
+    - cu124
+    - cu126
+    - cu128
+  requires_python: '>=3.10,<3.13'
+  notes: 'FoleyCrafter 基于 diffusers + torch 执行 V2A 推理，依赖 moviepy/ffmpeg 处理视频；默认视频长度限制 10s（可配置）'
+  # v0.2.12+ 引擎推荐版本组合：切换 torch 时优先使用此组合，避免 torchvision 版本错配
+  recommended_versions:
+    torch: '2.11.0'
+    torchvision: '0.26.0'
+    torchaudio: '2.11.0'
+    reason: 'FoleyCrafter 测试通过的稳定版本组合（torch 2.11.0 + torchvision 0.26.0 + torchaudio 2.11.0）'
+
+# ============================================================
+# v0.2.1 新增：models 块（模型分类规范化）
+# 详见 PR/architecture.md §16.4 manifest.models 块
+#
+# 模型布局：
+#   models/audio/v2a/foleycrafter/v1/
+#     ├── temporal_adapter.ckpt         （ymzhang319/FoleyCrafter）
+#     ├── semantic/
+#     │   └── semantic_adapter.bin      （ymzhang319/FoleyCrafter）
+#     ├── timestamp_detector.pth.tar    （ymzhang319/FoleyCrafter）
+#     ├── auffusion/                    （auffusion/auffusion-full-no-adapter，diffusers 目录）
+#     │   ├── model_index.json
+#     │   └── ...
+#     └── ip-adapter/                   （h94/IP-Adapter 子目录）
+#         ├── config.json
+#         └── model.safetensors
+#
+# model_files 声明用于：
+#   1. 启动预检（检查标志文件是否存在）
+#   2. 下载指引（提供 HuggingFace repo_id + mirror_url）
+# 实际下载需用 snapshot_download() 拉取整个 repo
+# ============================================================
+models:
+  # ===== 模型目录布局 =====
+  model_layout:
+    base: audio/v2a/foleycrafter/
+
+  # ===== 默认 variant（v0.3.0 新增）=====
+  # BaseEngine.infer 的 auto-load 优先级：request.variant > default_variant > None
+  default_variant: foleycrafter-v1
+
+  # ===== 模型变体列表 =====
+  variants:
+    # ----- FoleyCrafter-v1（主力模型） -----
+    - name: foleycrafter-v1
+      alias: FoleyCrafter-v1
+      base_model: auffusion-full-no-adapter
+      precision: fp16
+      loader: foleycrafter
+      vram_required: 10GB
+      path: audio/v2a/foleycrafter/v1
+      model_file_ids:
+        - fc-temporal-adapter
+        - fc-semantic-adapter
+        - fc-timestamp-detector
+        - fc-vocoder-config
+        - fc-vocoder-weights
+        - fc-auffusion-index
+        - fc-ip-adapter-config
+      uv_env: envs/audio-foleycrafter
+      default_steps: 25
+      extra:
+        default_temporal_scale: 0.2
+        default_semantic_scale: 1.0
+
+  # ===== 模型文件清单 =====
+  # FoleyCrafter 模型分散在 3 个 HF 仓库，此处声明 7 个文件用于预检
+  # v0.2.14.3+ 补充 vocoder/config.json + vocoder/vocoder.pt 两个文件
+  #   之前只声明了 temporal/semantic/timestamp 3 个文件，vocoder 文件未声明，
+  #   导致平台下载阶段不下载 vocoder，引擎启动时才兜底下载 → 联网超时 → 500 错误
+  # auffusion 和 ip-adapter 使用 marker 类型，实际需用 huggingface_hub.snapshot_download() 拉取整个 repo
+  #
+  # v0.4.x 互斥下载标记：
+  #   FoleyCrafter 只有 1 个 variant（foleycrafter-v1），所有 7 个文件都是必需的，
+  #   无互斥分组（exclusive_group 留空）。所有文件 required_for: [foleycrafter-v1]，
+  #   前端"按 variant 下载"模式下选中该 variant 即下载全部 7 个文件。
+  model_files:
+    # ----- temporal_adapter（ymzhang319/FoleyCrafter） -----
+    - id: fc-temporal-adapter
+      role: weights
+      filename: temporal_adapter.ckpt
+      target_dir: audio/v2a/foleycrafter/v1
+      format: ckpt
+      required_for: [foleycrafter-v1]           # v0.4.x：单 variant，所有文件必需
+      source:
+          type: huggingface
+          repo_id: ymzhang319/FoleyCrafter
+          filename: temporal_adapter.ckpt
+          url: https://huggingface.co/ymzhang319/FoleyCrafter/resolve/main/temporal_adapter.ckpt
+          mirror_url: https://hf-mirror.com/ymzhang319/FoleyCrafter/resolve/main/temporal_adapter.ckpt
+      description: "FoleyCrafter temporal_adapter（时间对齐 ControlNet 适配器）"
+
+    # ----- semantic_adapter（ymzhang319/FoleyCrafter） -----
+    - id: fc-semantic-adapter
+      role: weights
+      filename: semantic/semantic_adapter.bin
+      target_dir: audio/v2a/foleycrafter/v1
+      format: bin
+      required_for: [foleycrafter-v1]           # v0.4.x：单 variant，所有文件必需
+      source:
+          type: huggingface
+          repo_id: ymzhang319/FoleyCrafter
+          filename: semantic/semantic_adapter.bin
+          url: https://huggingface.co/ymzhang319/FoleyCrafter/resolve/main/semantic/semantic_adapter.bin
+          mirror_url: https://hf-mirror.com/ymzhang319/FoleyCrafter/resolve/main/semantic/semantic_adapter.bin
+      description: "FoleyCrafter semantic_adapter（语义 IP-Adapter 适配器）"
+
+    # ----- timestamp_detector（ymzhang319/FoleyCrafter） -----
+    - id: fc-timestamp-detector
+      role: weights
+      filename: timestamp_detector.pth.tar
+      target_dir: audio/v2a/foleycrafter/v1
+      format: tar
+      required_for: [foleycrafter-v1]           # v0.4.x：单 variant，所有文件必需
+      source:
+          type: huggingface
+          repo_id: ymzhang319/FoleyCrafter
+          filename: timestamp_detector.pth.tar
+          url: https://huggingface.co/ymzhang319/FoleyCrafter/resolve/main/timestamp_detector.pth.tar
+          mirror_url: https://hf-mirror.com/ymzhang319/FoleyCrafter/resolve/main/timestamp_detector.pth.tar
+      description: "FoleyCrafter timestamp_detector（视频时间戳检测 CNN）"
+
+    # ----- vocoder/config.json（ymzhang319/FoleyCrafter） -----
+    # v0.2.14.3+ 新增：之前漏声明，导致平台下载阶段不下载，引擎启动时兜底下载触发联网超时
+    - id: fc-vocoder-config
+      role: config
+      filename: vocoder/config.json
+      target_dir: audio/v2a/foleycrafter/v1
+      format: json
+      required_for: [foleycrafter-v1]           # v0.4.x：单 variant，所有文件必需
+      source:
+          type: huggingface
+          repo_id: ymzhang319/FoleyCrafter
+          filename: vocoder/config.json
+          url: https://huggingface.co/ymzhang319/FoleyCrafter/resolve/main/vocoder/config.json
+          mirror_url: https://hf-mirror.com/ymzhang319/FoleyCrafter/resolve/main/vocoder/config.json
+      description: "FoleyCrafter vocoder 配置文件（Generator.from_pretrained 必需）"
+
+    # ----- vocoder/vocoder.pt（ymzhang319/FoleyCrafter） -----
+    # v0.2.14.3+ 新增：vocoder 权重文件，频谱图→音频波形解码器
+    - id: fc-vocoder-weights
+      role: weights
+      filename: vocoder/vocoder.pt
+      target_dir: audio/v2a/foleycrafter/v1
+      format: pt
+      required_for: [foleycrafter-v1]           # v0.4.x：单 variant，所有文件必需
+      source:
+          type: huggingface
+          repo_id: ymzhang319/FoleyCrafter
+          filename: vocoder/vocoder.pt
+          url: https://huggingface.co/ymzhang319/FoleyCrafter/resolve/main/vocoder/vocoder.pt
+          mirror_url: https://hf-mirror.com/ymzhang319/FoleyCrafter/resolve/main/vocoder/vocoder.pt
+      description: "FoleyCrafter vocoder 权重（HiFi-GAN 声码器，频谱图→波形）"
+
+    # ----- Auffusion 基座标志文件（auffusion/auffusion-full-no-adapter） -----
+    - id: fc-auffusion-index
+      role: main
+      filename: model_index.json
+      target_dir: audio/v2a/foleycrafter/v1/auffusion
+      format: marker
+      required_for: [foleycrafter-v1]           # v0.4.x：单 variant，所有文件必需
+      # v0.2.13+ key_files：声明标志文件代表的关键权重（相对 target_dir）
+      # 预检时不仅检查 model_index.json 存在，还要检查以下关键权重齐全
+      # 缺失则 placement_status=incomplete_repo，阻断启动并提示下载
+      #
+      # v0.2.14.6+ 一次性补全所有 diffusers pipeline 必需文件：
+      # model_index.json 声明了 6 个组件（unet/vae/text_encoder/tokenizer/scheduler/feature_extractor）
+      # StableDiffusionPipeline.from_pretrained() 会加载所有组件，缺任何一个都会抛 OSError → 500
+      # 之前只声明了 7 个文件（权重 bin + config.json + model_index.json），漏了 6 个：
+      #   feature_extractor/preprocessor_config.json
+      #   scheduler/scheduler_config.json
+      #   tokenizer/merges.txt
+      #   tokenizer/special_tokens_map.json
+      #   tokenizer/tokenizer_config.json
+      #   tokenizer/vocab.json
+      # 导致平台下载器只下载 key_files 列表的文件，缺失的 6 个文件未下载 → 启动失败
+      #
+      # 注意：auffusion 仓库本身也包含 vocoder/config.json + vocoder/vocoder.pt，
+      # 但引擎读取的是 ymzhang319/FoleyCrafter 仓库的 vocoder 文件（放在 v1/vocoder/ 下），
+      # 不读取 auffusion/vocoder/，所以这里不纳入 auffusion 的 key_files。
+      key_files:
+        # ===== pipeline 索引 =====
+        - model_index.json                   # pipeline 索引（标志文件本身也纳入检查）
+        # ===== UNet =====
+        - unet/diffusion_pytorch_model.bin   # UNet 主权重（~3.44GB）
+        - unet/config.json                   # UNet 配置（diffusers from_pretrained 必需）
+        # ===== VAE =====
+        - vae/diffusion_pytorch_model.bin    # VAE 权重
+        - vae/config.json                    # VAE 配置（diffusers from_pretrained 必需）
+        # ===== CLIP 文本编码器 =====
+        - text_encoder/pytorch_model.bin     # CLIP 文本编码器权重（~492MB）
+        - text_encoder/config.json           # CLIP 文本编码器配置（diffusers from_pretrained 必需）
+        # ===== CLIP tokenizer（v0.2.14.6+ 补充，之前漏声明导致 500）=====
+        - tokenizer/vocab.json               # tokenizer 词表
+        - tokenizer/merges.txt               # tokenizer BPE 合并表
+        - tokenizer/tokenizer_config.json    # tokenizer 配置
+        - tokenizer/special_tokens_map.json  # tokenizer 特殊 token 映射
+        # ===== PNDM 调度器（v0.2.14.6+ 补充）=====
+        - scheduler/scheduler_config.json    # PNDM 调度器配置
+        # ===== CLIP 图像预处理器（v0.2.14.6+ 补充）=====
+        - feature_extractor/preprocessor_config.json  # CLIP 图像预处理器配置
+      source:
+          type: huggingface
+          repo_id: auffusion/auffusion-full-no-adapter
+          filename: model_index.json
+          url: https://huggingface.co/auffusion/auffusion-full-no-adapter/resolve/main/model_index.json
+          mirror_url: https://hf-mirror.com/auffusion/auffusion-full-no-adapter/resolve/main/model_index.json
+      description: "Auffusion 基座模型索引文件（标志文件，实际需 snapshot_download 整个 repo，约 8GB）"
+
+    # ----- IP-Adapter image_encoder 标志文件（h94/IP-Adapter） -----
+    - id: fc-ip-adapter-config
+      role: main
+      filename: config.json
+      target_dir: audio/v2a/foleycrafter/v1/ip-adapter
+      format: marker
+      required_for: [foleycrafter-v1]           # v0.4.x：单 variant，所有文件必需
+      # v0.2.13+ key_files：声明标志文件代表的关键权重（相对 target_dir）
+      # 预检时不仅检查 config.json 存在，还要检查 model.safetensors 齐全
+      # 缺失则 placement_status=incomplete_repo，阻断启动并提示下载
+      key_files:
+        - config.json          # 配置文件（标志文件本身也纳入检查）
+        - model.safetensors    # IP-Adapter image_encoder 权重（~1.5GB）
+      source:
+          type: huggingface
+          repo_id: h94/IP-Adapter
+          filename: models/image_encoder/config.json
+          url: https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/config.json
+          mirror_url: https://hf-mirror.com/h94/IP-Adapter/resolve/main/models/image_encoder/config.json
+      description: "IP-Adapter CLIP 视觉编码器配置（标志文件，实际需下载 image_encoder 子目录，约 1.5GB）"
+
+  # ===== LoRA 扫描配置（v0.1 不支持运行时切换，目录留空） =====
+  loras:
+    scan_dir: audio/v2a/foleycrafter/loras/

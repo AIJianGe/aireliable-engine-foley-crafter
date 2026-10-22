@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FoleyCrafter V2A 音效引擎</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>FoleyCrafter <span class="sub">V2A 音效引擎</span></h1>
+  <div class="engine-state">
+    <span id="state-badge" class="badge">未连接</span>
+    <span id="state-detail" class="state-detail">—</span>
+    <button id="btn-refresh-status" class="btn btn-ghost" title="刷新引擎状态">刷新</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ============ 左列：设置区 + 参数区 ============ -->
+  <div class="left-col">
+
+    <!-- ◆ 设置区 -->
+    <section class="panel panel-settings" id="panel-settings">
+      <h2>⚙ 设置</h2>
+      <div class="field-row">
+        <label>模式</label>
+        <div class="seg" id="mode-seg">
+          <button class="seg-btn active" data-mode="v2a">视频配音</button>
+          <button class="seg-btn" data-mode="t2a">文本配音</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <label>模型变体</label>
+        <select id="variant-select">
+          <option value="">自动（默认变体）</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <label>&nbsp;</label>
+        <div style="display:flex;gap:8px">
+          <button id="btn-load" class="btn btn-secondary">加载模型</button>
+          <button id="btn-unload" class="btn btn-danger">卸载模型</button>
+        </div>
+      </div>
+      <div class="hint" id="mode-hint">
+        视频配音（V2A）：上传视频 → 分析画面语义与时间戳 → 生成同步音效
+      </div>
+    </section>
+
+    <!-- ◆ 参数区 -->
+    <section class="panel panel-params" id="panel-params">
+      <h2>🎛 参数</h2>
+
+      <!-- 视频输入（V2A 模式显示） -->
+      <div class="field" id="video-field">
+        <label>输入视频 <span class="req">（必填 1 个）</span></label>
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="file-input" accept="video/*" hidden>
+          <p>点击选择或拖拽视频到此处</p>
+          <p class="dz-sub" id="dz-sub">支持 mp4 / avi / mov，超过时长限制会自动截断</p>
+        </div>
+        <div id="file-chip-box"></div>
+        <div class="upload-preview" id="upload-preview"></div>
+      </div>
+
+      <div class="field">
+        <label for="prompt">提示词</label>
+        <textarea id="prompt" rows="3" placeholder="描述想要的声音（可空，空时仅靠视频语义），如：雨滴打在铁皮屋顶…"></textarea>
+      </div>
+
+      <div class="field">
+        <label for="negative-prompt">负向提示词</label>
+        <textarea id="negative-prompt" rows="2" placeholder="不希望出现的声音（可空），如：语音、音乐"></textarea>
+      </div>
+
+      <!-- 高级参数折叠面板（对应 Gradio Accordion） -->
+      <details class="advanced">
+        <summary>▸ 高级参数</summary>
+        <div class="adv-grid">
+          <div class="field">
+            <label for="steps">推理步数 <span class="val" id="steps-val">25</span></label>
+            <input type="range" id="steps" min="1" max="100" value="25">
+          </div>
+          <div class="field">
+            <label for="seed">随机种子</label>
+            <input type="number" id="seed" value="42" min="-1" title="-1 = 随机">
+          </div>
+          <div class="field">
+            <label for="output-format">音频格式</label>
+            <select id="output-format">
+              <option value="wav">WAV（无损）</option>
+              <option value="mp3">MP3（压缩）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="temporal-scale">时间对齐强度 <span class="val" id="temporal-scale-val">0.2</span></label>
+            <input type="range" id="temporal-scale" min="0" max="1" step="0.05" value="0.2">
+          </div>
+          <div class="field">
+            <label for="semantic-scale">语义强度 <span class="val" id="semantic-scale-val">1.0</span></label>
+            <input type="range" id="semantic-scale" min="0" max="2" step="0.1" value="1.0">
+          </div>
+          <div class="field">
+            <label for="max-duration">视频长度上限（秒）</label>
+            <input type="number" id="max-duration" value="10" min="1" max="60" step="1">
+          </div>
+          <div class="field" style="grid-column:1/-1">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:400">
+              <input type="checkbox" id="temporal-align" checked style="width:auto">
+              启用时间对齐（temporal_adapter，关闭后音效与画面动作不同步）
+            </label>
+          </div>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <!-- ============ 右列：结果区 ============ -->
+  <div class="right-col">
+
+    <!-- ◆ 结果区 -->
+    <section class="panel panel-result" id="panel-result">
+      <h2>🔊 生成结果</h2>
+
+      <div class="gen-bar">
+        <button id="btn-generate" class="btn btn-primary btn-large">开始生成</button>
+        <div class="progress-wrap" id="progress-wrap" style="display:none">
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          <span class="progress-text" id="progress-text">准备中…</span>
+        </div>
+      </div>
+
+      <div class="error-box" id="error-box" style="display:none">
+        <button class="err-close" onclick="this.parentElement.style.display='none'">×</button>
+        <pre id="error-text"></pre>
+      </div>
+
+      <div class="result-view" id="result-view">
+        <p class="placeholder">生成结果将显示在这里</p>
+      </div>
+
+      <div class="result-meta" id="result-meta"></div>
+    </section>
+  </div>
+</main>
+
+<footer class="footer">
+  FoleyCrafter V2A Engine · 引擎直连模式（/ui → 7004） · <span id="footer-mode"></span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
