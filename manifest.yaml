@@ -29,7 +29,7 @@
 # ===== v0.1 必需字段 =====
 engine_id: foleycrafter_a3b2c1
 engine_name: FoleyCrafter
-engine_version: 0.1.0
+engine_version: 1.0.0
 aireliable_compat: ">=0.0.16"
 uv_env_name: audio-foleycrafter
 export_mode: source
@@ -68,8 +68,8 @@ source:
 
 # 升级信息
 upgrade:
-  check_url: https://api.github.com/repos/open-mmlab/FoleyCrafter/releases/latest
-  auto_check: false
+  check_url: https://api.github.com/repos/AIJianGe/aireliable-engine-foley-crafter/releases/latest
+  auto_check: true
 
 # 节点包依赖（integrated 范式不依赖节点包）
 node_packages: []
@@ -169,6 +169,7 @@ models:
   model_files:
     # ----- temporal_adapter（ymzhang319/FoleyCrafter） -----
     - id: fc-temporal-adapter
+      size_bytes: 4335749362
       role: weights
       filename: temporal_adapter.ckpt
       target_dir: audio/v2a/foleycrafter/v1
@@ -184,6 +185,7 @@ models:
 
     # ----- semantic_adapter（ymzhang319/FoleyCrafter） -----
     - id: fc-semantic-adapter
+      size_bytes: 89289954
       role: weights
       filename: semantic/semantic_adapter.bin
       target_dir: audio/v2a/foleycrafter/v1
@@ -199,6 +201,7 @@ models:
 
     # ----- timestamp_detector（ymzhang319/FoleyCrafter） -----
     - id: fc-timestamp-detector
+      size_bytes: 376654135
       role: weights
       filename: timestamp_detector.pth.tar
       target_dir: audio/v2a/foleycrafter/v1
@@ -231,6 +234,7 @@ models:
     # ----- vocoder/vocoder.pt（ymzhang319/FoleyCrafter） -----
     # v0.2.14.3+ 新增：vocoder 权重文件，频谱图→音频波形解码器
     - id: fc-vocoder-weights
+      size_bytes: 54808625
       role: weights
       filename: vocoder/vocoder.pt
       target_dir: audio/v2a/foleycrafter/v1
