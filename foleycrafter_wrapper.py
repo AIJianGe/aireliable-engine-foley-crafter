@@ -42,6 +42,12 @@ import numpy as np
 
 from .config import EngineConfig
 
+# 任务 71：设备探测 / 显存查询统一走 SDK（平台与引擎同一份事实源）
+from aireliable_engine.device import (
+    query_free_vram_gb as _sdk_query_free_vram_gb,
+    resolve_device as _sdk_resolve_device,
+)
+
 logger = logging.getLogger(__name__)
 
 # v0.3.5+ 设备策略合法取值（平台注入 AIRELIABLE_DEVICE_POLICY 环境变量）
@@ -486,14 +492,10 @@ class FoleyCrafterWrapper:
         self._video_transform = None
 
     def _resolve_device(self, device: str) -> str:
-        """解析设备字符串。"""
-        if device == "auto":
-            # 延迟导入 torch（避免模块加载时强制依赖 torch）
-            import torch
-            if torch.cuda.is_available():
-                return "cuda"
-            return "cpu"
-        return device
+        """解析设备字符串（任务 71：委托 SDK ``device.resolve_device``）。"""
+        if device != "auto":
+            return device
+        return _sdk_resolve_device("auto")
 
     def get_vram_used(self) -> int:
         """获取当前显存占用（MB）。"""
@@ -545,9 +547,10 @@ class FoleyCrafterWrapper:
         #   gpu 策略显存不足 → 抛友好错误
         #   auto → 不预检（保持现状，OOM 时由 PyTorch 抛原始错误）
         if device.startswith("cuda") and self.device_policy in ("gpu", "gpu+cpu"):
-            import torch as _torch
-            if _torch.cuda.is_available():
-                free_gb = _torch.cuda.mem_get_info()[0] / (1024 ** 3)
+            # 任务 71：显存查询改用 SDK（保持 torch.cuda.mem_get_info 数据源）；
+            # 查不到（None）视为跳过预检，与旧实现 torch.cuda.is_available()=False 一致
+            free_gb = _sdk_query_free_vram_gb(source="torch")
+            if free_gb is not None:
                 if free_gb < _REQUIRED_VRAM_GB:
                     if self.device_policy == "gpu+cpu":
                         logger.warning(

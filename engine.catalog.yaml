@@ -1,0 +1,44 @@
+# 开源引擎中心展示元数据（任务 80 / T4.1）
+schema: 1
+engine_id: foleycrafter_a3b2c1
+
+name:
+  zh: "FoleyCrafter 视频音效"
+  en: "FoleyCrafter"
+
+description:
+  zh: "FoleyCrafter 视频转音效引擎：为无声视频自动生成时间与语义对齐的环境音、动作音，也支持纯文本转音效。"
+  en: "Video-to-audio Foley engine that generates time- and semantics-aligned sound effects for silent video, with text-to-audio support."
+
+category: audio
+tags:
+  - video-to-audio
+  - foley
+  - sound-effects
+
+repository:
+  github: AIJianGe/aireliable-engine-foley-crafter
+  gitee: AIJianGe/aireliable-engine-foley-crafter
+
+cover: catalog/covers/foleycrafter_a3b2c1.webp
+
+requirements:
+  python: ">=3.10,<3.13"
+  torch: ">=2.5.0"
+  gpu: required
+
+license: PolyForm-Noncommercial-1.0.0
+
+description_long:
+  zh: |-
+    FoleyCrafter 把无声视频变成有现场感的成片：模型逐帧理解画面中的物体、动作与场景，自动生成与画面时间轴对齐的环境音、脚步声、碰撞声等音效，也支持只用文字描述生成音效。
+
+    引擎同时做时间对齐与语义对齐，长镜头可分段处理，输出可直接与原视频合流。适合短片、广告、游戏过场、纪录片与二创素材补音。
+
+    需要 NVIDIA GPU 与 torch >= 2.5.0，模型由引擎在首次运行时按需下载；显存占用随视频分辨率与时长大致线性增长。
+  en: |-
+    FoleyCrafter turns silent footage into finished scenes: the model understands objects, actions and environments frame by frame, then generates ambience, footsteps, impacts and other sound effects aligned to the timeline. Text-only sound-effect generation is supported as well.
+
+    Both temporal and semantic alignment are applied, long shots can be processed in segments, and the output can be muxed back onto the original video. It suits short films, ads, game cutscenes, documentaries and remix material that needs foley.
+
+    An NVIDIA GPU and torch >= 2.5.0 are required; model weights are downloaded on first run. VRAM usage grows roughly linearly with resolution and duration.
